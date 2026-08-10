@@ -61,7 +61,19 @@ class TokenBucket:
         Bước 5 quan trọng — thiếu nó thì client im lặng một ngày sẽ tích được
         14.400 token và bắn hết trong một giây.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt available")
+        now = now if now is not None else time.time()
+        state = self.client.hgetall(self._key(client_id))
+
+        if not state:  # client mới → xô đầy
+            return float(self.capacity)
+
+        # Không có job nền nào nạp token; số token được tính lại từ mốc ts
+        tokens = float(state["tokens"])
+        last = float(state["ts"])
+        tokens += (now - last) * self.refill_per_second
+
+        # Chặn trên bắt buộc: im lặng cả ngày cũng chỉ được đầy xô
+        return min(float(self.capacity), tokens)
 
     def consume(self, client_id: str, now: float | None = None) -> None:
         """Lấy 1 token khỏi xô, hết token thì raise 429.
@@ -85,7 +97,20 @@ class TokenBucket:
         Chú ý ghi lại **cả** ``ts``. Quên cập nhật ``ts`` thì lần sau bạn tính
         phần nạp thêm từ một mốc thời gian đã cũ, và xô tự đầy lại vô tội vạ.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt consume")
+        now = now if now is not None else time.time()
+        tokens = self.available(client_id, now)
+
+        if tokens < 1:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="rate limit exceeded",
+                headers={"Retry-After": str(self.retry_after(tokens))},
+            )
+
+        key = self._key(client_id)
+        # Ghi cả ts, quên thì lần sau tính phần nạp từ mốc đã cũ → xô tự đầy
+        self.client.hset(key, mapping={"tokens": tokens - 1, "ts": now})
+        self.client.expire(key, BUCKET_TTL_SECONDS)
 
     def retry_after(self, tokens: float) -> int:
         """CHO SẴN — còn bao nhiêu giây nữa thì có token tiếp theo."""
