@@ -29,6 +29,7 @@ from .lifecycle import shutdown_guard
 from .logging_utils import emit
 from .rate_limiter import TokenBucket
 from .store import ChatStore, get_redis_client
+from .ui import router as ui_router
 
 SERVICE_NAME = "day12-chat-service"
 SERVICE_VERSION = "1.0.0"
@@ -69,6 +70,10 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Day 12 Chat Service", version=SERVICE_VERSION, lifespan=lifespan)
+
+
+# Giao diện thử ở GET / — ngoài phạm vi chấm điểm, xem app/ui.py
+app.include_router(ui_router)
 
 
 class ChatRequest(BaseModel):
